@@ -25,6 +25,7 @@ export type DashboardData = {
 export type IdxChartPoint = {
   timestamp: string;
   idx: number;
+  rates?: Rates;
   isSynthetic?: boolean;
 };
 
@@ -371,6 +372,7 @@ function chartPointsWithLiveCurrent(
   const livePoint: IdxChartPoint = {
     timestamp: current.updatedAt,
     idx: computeIDX(current.rates, BASELINE_RATES_2000),
+    rates: current.rates,
     isSynthetic: false,
   };
 

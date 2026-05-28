@@ -167,6 +167,7 @@ function buildChartPoints(rows: SnapshotRow[], latestDate: Date): IdxChartPoint[
           ? new Date(nearest.bucket_ts).toISOString()
           : target.toISOString(),
         idx: lastIdx,
+        rates: hasRealPoint && nearest ? nearest.rates : undefined,
         isSynthetic: !hasRealPoint,
       });
     }
@@ -180,10 +181,12 @@ function buildChartPoints(rows: SnapshotRow[], latestDate: Date): IdxChartPoint[
       points.push({
         timestamp: latestTimestamp,
         idx: Number(latestRow.idx),
+        rates: latestRow.rates,
         isSynthetic: false,
       });
     } else {
       lastPoint.idx = Number(latestRow.idx);
+      lastPoint.rates = latestRow.rates;
       lastPoint.isSynthetic = false;
     }
   }
@@ -230,7 +233,7 @@ async function readStoredDashboardData() {
   while (true) {
     const { data: chunk, error } = await supabase
       .from('idrxy_snapshots')
-      .select('bucket_ts, idx')
+      .select('bucket_ts, idx, rates')
       .gte('bucket_ts', currentStart)
       .lte('bucket_ts', latestDate.toISOString())
       .order('bucket_ts', { ascending: true })

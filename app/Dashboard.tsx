@@ -68,7 +68,29 @@ function isRoundedZero(value: number, decimals: number) {
   return Math.abs(value) < 0.5 * 10 ** -decimals;
 }
 
-function IdxLineChart({ points }: { points: IdxChartPoint[] }) {
+type ChartMetric = {
+  label: string;
+  value: (point: IdxChartPoint) => number | null;
+  format: (value: number) => string;
+  empty: string;
+};
+
+const idxChartMetric: ChartMetric = {
+  label: 'IDRXY seven day line chart',
+  value: (point) => point.idx,
+  format: (value) => fmt(value, 2),
+  empty: 'WAITING FOR IDRXY SNAPSHOT HISTORY',
+};
+
+function IdxLineChart({
+  points,
+  metric = idxChartMetric,
+  compact = false,
+}: {
+  points: IdxChartPoint[];
+  metric?: ChartMetric;
+  compact?: boolean;
+}) {
   const latestTime = points.reduce(
     (latest, point) => Math.max(latest, new Date(point.timestamp).getTime()),
     0,
@@ -86,37 +108,45 @@ function IdxLineChart({ points }: { points: IdxChartPoint[] }) {
     : points.filter((point) => new Date(point.timestamp).getTime() >= chartMinTime);
 
   if (chartPoints.length < 2) {
-    return <div className="idx-chart-empty">WAITING FOR IDRXY SNAPSHOT HISTORY</div>;
+    return <div className="idx-chart-empty">{metric.empty}</div>;
+  }
+
+  const filteredChartPoints = chartPoints.filter((point) => metric.value(point) !== null);
+
+  if (filteredChartPoints.length < 2) {
+    return <div className="idx-chart-empty">{metric.empty}</div>;
   }
 
   const width = 1000;
   const height = 200;
   const padX = 2;
   const padY = 16;
-  const valueForChart = (point: IdxChartPoint) => chartDisplayIdx(point.idx);
-  const realValues = chartPoints
+  const valueForChart = (point: IdxChartPoint) => chartDisplayIdx(metric.value(point) ?? 0);
+  const realValues = filteredChartPoints
     .filter((point) => !point.isSynthetic)
     .map(valueForChart);
-  const fallbackLow = Math.min(...(realValues.length ? realValues : chartPoints.map(valueForChart)));
-  const normalizedChartPoints = chartPoints.map((point, index) => {
+  const fallbackLow = Math.min(...(realValues.length ? realValues : filteredChartPoints.map(valueForChart)));
+  const normalizedChartPoints = filteredChartPoints.map((point, index) => {
     if (!point.isSynthetic) return point;
 
-    const previousRealIndex = chartPoints
+    const previousRealIndex = filteredChartPoints
       .slice(0, index)
       .findLastIndex((candidate) => !candidate.isSynthetic);
-    const nextRealOffset = chartPoints
+    const nextRealOffset = filteredChartPoints
       .slice(index + 1)
       .findIndex((candidate) => !candidate.isSynthetic);
     const nextRealIndex = nextRealOffset === -1 ? -1 : index + 1 + nextRealOffset;
-    const previousReal = previousRealIndex === -1 ? null : chartPoints[previousRealIndex];
-    const nextReal = nextRealIndex === -1 ? null : chartPoints[nextRealIndex];
+    const previousReal = previousRealIndex === -1 ? null : filteredChartPoints[previousRealIndex];
+    const nextReal = nextRealIndex === -1 ? null : filteredChartPoints[nextRealIndex];
 
     if (previousReal && nextReal) {
       const progress = (index - previousRealIndex) / (nextRealIndex - previousRealIndex);
+      const previousValue = metric.value(previousReal) ?? fallbackLow;
+      const nextValue = metric.value(nextReal) ?? fallbackLow;
 
       return {
         ...point,
-        idx: previousReal.idx + (nextReal.idx - previousReal.idx) * progress,
+        idx: previousValue + (nextValue - previousValue) * progress,
       };
     }
 
@@ -160,7 +190,7 @@ function IdxLineChart({ points }: { points: IdxChartPoint[] }) {
   });
 
   return (
-    <div className="idx-chart" aria-label="IDRXY seven day line chart">
+    <div className={`idx-chart${compact ? ' idx-chart-compact' : ''}`} aria-label={metric.label}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         {fillPath && <path className="idx-chart-fill" d={fillPath} />}
         {syntheticSegments.map((path, index) => (
@@ -176,7 +206,7 @@ function IdxLineChart({ points }: { points: IdxChartPoint[] }) {
               <circle className="idx-chart-dot" cx={point.x} cy={point.y} r="3.5" />
               <foreignObject x={Math.min(Math.max(point.x - 300, 8), width - 608)} y={Math.max(point.y - 210, 2)} width="600" height="250">
                 <div className="idx-chart-tooltip">
-                  <strong>{fmt(point.idx, 2)}</strong>
+                  <strong>{metric.format(valueForChart(point))}</strong>
                   <span>{formatChartTime(point.timestamp)}</span>
                 </div>
               </foreignObject>
@@ -189,6 +219,7 @@ function IdxLineChart({ points }: { points: IdxChartPoint[] }) {
 
 export default function Dashboard({ data }: { data: DashboardData }) {
   const [clock, setClock] = useState('--:--:-- UTC');
+  const [selectedPairCode, setSelectedPairCode] = useState<string | null>(null);
 
   const rates = data.current?.rates || null;
   const yesterday = data.yesterday ?? null;
@@ -226,6 +257,24 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const strongest = basketChanges.filter((item) => item.ratePct < 0).sort((a, b) => a.ratePct - b.ratePct)[0];
   const weakest = basketChanges.filter((item) => item.ratePct > 0).sort((a, b) => b.ratePct - a.ratePct)[0];
   const signedPct = (value: number, decimals = 2) => `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}%`;
+  const selectedPair = PAIRS.find((pair) => pair.code === selectedPairCode) ?? null;
+
+  useEffect(() => {
+    if (!selectedPairCode) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedPairCode(null);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [selectedPairCode]);
 
   const renderPairCard = (pair: Pair) => {
     if (!rates) return null;
@@ -235,9 +284,9 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     const diffPct = previous ? ((rate - previous) / previous) * 100 : 0;
     const hasChange = Boolean(previous) && !isRoundedZero(diffPct, 3);
     const changeClass = !hasChange ? 'change-neutral' : diffPct > 0 ? 'idr-weaker' : 'idr-stronger';
-
-    return (
-      <div className="pair-card" key={pair.code}>
+    const isMainBasketPair = PAIRS.some((basketPair) => basketPair.code === pair.code);
+    const cardContent = (
+      <>
         <div className="pair-header">
           <div>
             <div className="pair-name">{pair.code}/IDR</div>
@@ -249,6 +298,84 @@ export default function Dashboard({ data }: { data: DashboardData }) {
         <div className="pair-sub">
           <div className={`pair-change ${changeClass}`}>{hasChange ? `${diffPct > 0 ? '▲' : '▼'} ${Math.abs(diffPct).toFixed(3)}%` : '- 0%'}</div>
         </div>
+      </>
+    );
+
+    if (!isMainBasketPair) {
+      return <div className="pair-card" key={pair.code}>{cardContent}</div>;
+    }
+
+    return (
+      <button
+        type="button"
+        className="pair-card"
+        key={pair.code}
+        onClick={() => setSelectedPairCode(pair.code)}
+        aria-label={`View ${pair.code} IDR details`}
+      >
+        {cardContent}
+      </button>
+    );
+  };
+
+  const renderPairModal = () => {
+    if (!selectedPair || !rates) return null;
+
+    const rate = rates[selectedPair.code];
+    const previous = yesterday?.rates[selectedPair.code];
+    const diff = previous ? rate - previous : 0;
+    const diffPct = previous ? (diff / previous) * 100 : 0;
+    const hasDiff = Boolean(previous) && !isRoundedZero(diff, 4);
+    const hasPct = Boolean(previous) && !isRoundedZero(diffPct, 3);
+    const changeClass = !hasPct ? 'change-neutral' : diffPct > 0 ? 'idr-weaker' : 'idr-stronger';
+    const metric: ChartMetric = {
+      label: `${selectedPair.code}/IDR seven day line chart`,
+      value: (point) => point.rates?.[selectedPair.code] ?? null,
+      format: (value) => `Rp ${fmtIDR(value)}`,
+      empty: `WAITING FOR ${selectedPair.code}/IDR SNAPSHOT HISTORY`,
+    };
+
+    return (
+      <div className="pair-modal-backdrop" role="presentation" onClick={() => setSelectedPairCode(null)}>
+        <section
+          className="pair-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pair-modal-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" className="pair-modal-close" aria-label="Close details" onClick={() => setSelectedPairCode(null)}>×</button>
+          <div className="pair-modal-header">
+            <div>
+              <div className="pair-modal-kicker">MAIN IDRXY BASKET</div>
+              <h2 id="pair-modal-title">{selectedPair.code}/IDR</h2>
+              <div className="pair-modal-name">{selectedPair.name}</div>
+            </div>
+            <div className="pair-modal-flag">{selectedPair.flag}</div>
+          </div>
+
+          <div className="pair-modal-stats">
+            <div>
+              <span>Current price</span>
+              <strong>Rp {fmtIDR(rate)}</strong>
+            </div>
+            <div>
+              <span>Price change</span>
+              <strong className={changeClass}>{hasDiff ? `${diff > 0 ? '+' : '-'}${fmtIDR(Math.abs(diff))}` : '- Rp 0'}</strong>
+            </div>
+            <div>
+              <span>Percent change</span>
+              <strong className={changeClass}>{hasPct ? `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(3)}%` : '- 0%'}</strong>
+            </div>
+          </div>
+
+          <IdxLineChart points={data.chartPoints ?? []} metric={metric} compact />
+
+          <div className="pair-modal-meta">
+            <div>UPDATED <span>{data.current ? formatUtcTime(data.current.updatedAt) : '-'}</span></div>
+            <div>{previous && yesterday?.updatedAt ? `VS PREVIOUS WEEKDAY CLOSE ${formatWibTime(yesterday.updatedAt)}` : 'VS PREVIOUS WEEKDAY CLOSE -'}</div>
+          </div>
+        </section>
       </div>
     );
   };
@@ -272,6 +399,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
 
   return (
     <>
+      {renderPairModal()}
       {['tl', 'tr', 'bl', 'br'].map((corner) => (
         <svg key={corner} className={`batik-corner batik-${corner}`} viewBox="0 0 120 120" fill="none">
           <path d="M0 0 L60 0 L0 60 Z" fill="#d2a550" />
