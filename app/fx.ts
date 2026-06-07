@@ -367,7 +367,6 @@ function chartPointsWithLiveCurrent(
   current: FetchResult | null,
 ) {
   if (!current) return chartPoints;
-  if (!isJakartaWeekday(new Date(current.updatedAt))) return chartPoints;
 
   const livePoint: IdxChartPoint = {
     timestamp: current.updatedAt,
@@ -381,14 +380,6 @@ function chartPointsWithLiveCurrent(
   ));
 
   return [...previousPoints, livePoint];
-}
-
-function isJakartaWeekday(date: Date) {
-  const jakartaOffsetMs = 7 * 60 * 60 * 1000;
-  const jakartaDate = new Date(date.getTime() + jakartaOffsetMs);
-  const day = jakartaDate.getUTCDay();
-
-  return day !== 0 && day !== 6;
 }
 
 export async function getDashboardData(): Promise<DashboardData> {
