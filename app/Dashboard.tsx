@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ADDITIONAL_PAIRS, BASELINE_RATES_2000, BASELINE_SOURCE_DATE, computeIDX, fmt, fmtIDR, PAIRS } from './fx';
+import { ADDITIONAL_PAIRS, ALL_PAIRS, BASELINE_RATES_2000, BASELINE_SOURCE_DATE, computeIDX, fmt, fmtIDR, PAIRS } from './fx';
 import type { AssetPrice, DashboardData, IdxChartPoint, Pair } from './fx';
 import type { BondMarketRow } from './bonds';
 
@@ -327,7 +327,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const strongest = basketChanges.filter((item) => item.ratePct < 0).sort((a, b) => a.ratePct - b.ratePct)[0];
   const weakest = basketChanges.filter((item) => item.ratePct > 0).sort((a, b) => b.ratePct - a.ratePct)[0];
   const signedPct = (value: number, decimals = 2) => `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}%`;
-  const selectedPair = PAIRS.find((pair) => pair.code === selectedPairCode) ?? null;
+  const selectedPair = ALL_PAIRS.find((pair) => pair.code === selectedPairCode) ?? null;
 
   useEffect(() => {
     if (!selectedPairCode) return;
@@ -354,7 +354,6 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     const diffPct = previous ? ((rate - previous) / previous) * 100 : 0;
     const hasChange = Boolean(previous) && !isRoundedZero(diffPct, 3);
     const changeClass = !hasChange ? 'change-neutral' : diffPct > 0 ? 'idr-weaker' : 'idr-stronger';
-    const isMainBasketPair = PAIRS.some((basketPair) => basketPair.code === pair.code);
     const cardContent = (
       <>
         <div className="pair-header">
@@ -370,10 +369,6 @@ export default function Dashboard({ data }: { data: DashboardData }) {
         </div>
       </>
     );
-
-    if (!isMainBasketPair) {
-      return <div className="pair-card" key={pair.code}>{cardContent}</div>;
-    }
 
     return (
       <button
@@ -398,6 +393,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     const hasDiff = Boolean(previous) && !isRoundedZero(diff, 4);
     const hasPct = Boolean(previous) && !isRoundedZero(diffPct, 3);
     const changeClass = !hasPct ? 'change-neutral' : diffPct > 0 ? 'idr-weaker' : 'idr-stronger';
+    const isMainBasketPair = PAIRS.some((pair) => pair.code === selectedPair.code);
     const metric: ChartMetric = {
       label: `${selectedPair.code}/IDR seven day line chart`,
       value: (point) => point.rates?.[selectedPair.code] ?? null,
@@ -417,7 +413,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
           <button type="button" className="pair-modal-close" aria-label="Close details" onClick={() => setSelectedPairCode(null)}>×</button>
           <div className="pair-modal-header">
             <div>
-              <div className="pair-modal-kicker">MAIN IDRXY BASKET</div>
+              <div className="pair-modal-kicker">{isMainBasketPair ? 'MAIN IDRXY BASKET' : 'ADDITIONAL EXCHANGE RATE'}</div>
               <h2 id="pair-modal-title">{selectedPair.code}/IDR</h2>
               <div className="pair-modal-name">{selectedPair.name}</div>
             </div>
