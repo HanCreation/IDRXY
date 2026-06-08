@@ -503,6 +503,197 @@ body::before {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.bond-section {
+  padding-top: 0.5rem;
+}
+
+.bond-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  animation: fadeSlideIn 0.8s ease 0.2s both;
+}
+
+.bond-card {
+  background: var(--panel);
+  padding: 1.25rem 1.5rem;
+  min-width: 0;
+}
+
+.bond-header,
+.bond-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.bond-country {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gold);
+  letter-spacing: 0.05em;
+}
+
+.bond-code {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+.bond-source-mark {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--gold2);
+  border: 1px solid var(--border2);
+  padding: 2px 7px;
+  line-height: 1.3;
+}
+
+.bond-main {
+  align-items: baseline;
+  justify-content: flex-start;
+  margin: 1rem 0 1.1rem;
+  flex-wrap: wrap;
+}
+
+.bond-main span,
+.bond-spread-heading,
+.bond-spread-cell span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.bond-main strong {
+  font-family: var(--mono);
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.bond-maturities {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+
+.bond-maturity {
+  background: var(--bg2);
+  padding: 0.65rem;
+  min-width: 0;
+}
+
+.bond-maturity span,
+.bond-meta,
+.bond-change {
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.bond-maturity > span {
+  display: block;
+  color: var(--text3);
+  letter-spacing: 0.08em;
+}
+
+.bond-maturity strong {
+  display: block;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 0.2rem;
+}
+
+.bond-change {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.bond-meta {
+  color: var(--text3);
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 1rem;
+  line-height: 1.45;
+}
+
+.bond-meta span,
+.bond-meta a {
+  color: var(--text2);
+}
+
+.bond-meta a {
+  text-decoration: underline;
+  text-decoration-color: rgba(210,165,80,0.35);
+  text-underline-offset: 2px;
+}
+
+.bond-meta a:hover,
+.bond-meta a:focus-visible {
+  color: var(--gold2);
+  text-decoration-color: var(--gold2);
+  outline: none;
+}
+
+.bond-spread-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-top: 0;
+  padding: 1rem 1.5rem 1.25rem;
+}
+
+.bond-spread-heading {
+  color: var(--gold2);
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  text-shadow: 0 0 16px rgba(240,192,96,0.18);
+}
+
+.bond-spread-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+
+.bond-spread-cell {
+  background: var(--bg2);
+  padding: 0.75rem;
+  min-width: 0;
+}
+
+.bond-spread-cell span {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.bond-spread-cell strong {
+  display: block;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
 .pair-card {
   background: var(--panel);
   padding: 1.25rem 1.5rem;
@@ -960,9 +1151,15 @@ body::before {
   .pairs-grid,
   .main-pairs-grid,
   .additional-grid,
-  .assets-grid { grid-template-columns: 1fr; }
+  .assets-grid,
+  .bond-grid { grid-template-columns: 1fr; }
   .pair-card { padding: 1rem 1.1rem; }
   .pair-rate { font-size: clamp(1.35rem, 8vw, 1.6rem); }
+  .bond-card { padding: 1rem 1.1rem; }
+  .bond-main strong { font-size: 1.6rem; }
+  .bond-maturities { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bond-spread-panel { padding: 1rem 1.1rem; }
+  .bond-spread-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pair-modal-backdrop {
     align-items: center;
     padding: 0.75rem;

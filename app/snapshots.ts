@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
 import { unstable_cache } from 'next/cache';
+import { getSupabaseClient } from './lib/supabase';
 import type { FetchResult, IdxChartPoint, Rates } from './fx';
 
 type SnapshotRow = {
@@ -8,17 +8,8 @@ type SnapshotRow = {
   rates: Rates;
   assets: FetchResult['assets'] | null;
   provider: string;
+  created_at?: string | null;
 };
-
-function getSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-    ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !publishableKey) return null;
-
-  return createClient(url, publishableKey);
-}
 
 function rowToFetchResult(row: SnapshotRow): FetchResult {
   return {
@@ -28,6 +19,16 @@ function rowToFetchResult(row: SnapshotRow): FetchResult {
     updatedAt: row.bucket_ts,
   };
 }
+
+export type StoredDashboardData = {
+  current: FetchResult | null;
+  previous: FetchResult | null;
+  comparison: {
+    label: string;
+    timestamp: string;
+  } | null;
+  chartPoints: IdxChartPoint[];
+};
 
 function nearestSnapshot(rows: SnapshotRow[], target: Date) {
   if (!rows.length) return null;
@@ -196,33 +197,60 @@ function buildChartPoints(rows: SnapshotRow[], latestDate: Date): IdxChartPoint[
 
 async function readStoredDashboardData() {
   const supabase = getSupabaseClient();
-  if (!supabase) return null;
+  if (!supabase) {
+    console.warn('Supabase env vars are missing; dashboard data unavailable.');
+    return {
+      current: null,
+      previous: null,
+      comparison: null,
+      chartPoints: [],
+    } satisfies StoredDashboardData;
+  }
 
   const { data: latestRows, error: latestError } = await supabase
     .from('idrxy_snapshots')
-    .select('bucket_ts, idx, rates, assets, provider')
+    .select('bucket_ts, idx, rates, assets, provider, created_at')
     .order('bucket_ts', { ascending: false })
     .limit(1);
 
-  if (latestError || !latestRows?.length) return null;
+  if (latestError) {
+    console.error('Failed to read latest IDRXY snapshot:', latestError.message);
+    return {
+      current: null,
+      previous: null,
+      comparison: null,
+      chartPoints: [],
+    } satisfies StoredDashboardData;
+  }
+
+  if (!latestRows?.length) {
+    return {
+      current: null,
+      previous: null,
+      comparison: null,
+      chartPoints: [],
+    } satisfies StoredDashboardData;
+  }
 
   const latest = latestRows[0] as SnapshotRow;
   const latestDate = new Date(latest.bucket_ts);
-  let previousWeekdayStart = previousJakartaWeekdayStartUtc(latestDate);
-  let yesterday: SnapshotRow | null = null;
+  const comparisonTarget = new Date(latestDate.getTime() - 24 * 60 * 60 * 1000);
+  const comparisonToleranceMs = 15 * 60 * 1000;
+  const comparisonStart = new Date(comparisonTarget.getTime() - comparisonToleranceMs);
+  const comparisonEnd = new Date(comparisonTarget.getTime() + comparisonToleranceMs);
 
-  for (let attempt = 0; attempt < 10 && !yesterday; attempt++) {
-    const { data: previousRows } = await supabase
-      .from('idrxy_snapshots')
-      .select('bucket_ts, idx, rates, assets, provider')
-      .gte('bucket_ts', previousWeekdayStart.toISOString())
-      .lte('bucket_ts', jakartaDayEndUtc(previousWeekdayStart).toISOString())
-      .order('bucket_ts', { ascending: false })
-      .limit(1);
+  const { data: comparisonRows, error: comparisonError } = await supabase
+    .from('idrxy_snapshots')
+    .select('bucket_ts, idx, rates, assets, provider, created_at')
+    .gte('bucket_ts', comparisonStart.toISOString())
+    .lte('bucket_ts', comparisonEnd.toISOString())
+    .order('bucket_ts', { ascending: true });
 
-    yesterday = ((previousRows ?? [])[0] as SnapshotRow | undefined) ?? null;
-    previousWeekdayStart = previousJakartaWeekdayStartUtc(previousWeekdayStart);
+  if (comparisonError) {
+    console.error('Failed to read 24h comparison IDRXY snapshot:', comparisonError.message);
   }
+
+  const previous = nearestSnapshot((comparisonRows ?? []) as SnapshotRow[], comparisonTarget);
 
   const chartMin = new Date(jakartaDayStartUtc(latestDate));
   chartMin.setUTCDate(chartMin.getUTCDate() - 10);
@@ -259,9 +287,13 @@ async function readStoredDashboardData() {
 
   return {
     current: rowToFetchResult(latest),
-    yesterday: yesterday ? rowToFetchResult(yesterday) : null,
+    previous: previous ? rowToFetchResult(previous) : null,
+    comparison: previous ? {
+      label: 'nearest 24h snapshot',
+      timestamp: new Date(previous.bucket_ts).toISOString(),
+    } : null,
     chartPoints: points,
-  };
+  } satisfies StoredDashboardData;
 }
 
 export const getStoredDashboardData = unstable_cache(

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ADDITIONAL_PAIRS, BASELINE_RATES_2000, BASELINE_SOURCE_DATE, computeIDX, fmt, fmtIDR, PAIRS } from './fx';
 import type { AssetPrice, DashboardData, IdxChartPoint, Pair } from './fx';
+import type { BondMarketRow } from './bonds';
 
 function formatChartTime(timestamp: string) {
   const date = new Date(timestamp);
@@ -21,12 +22,26 @@ function formatChartTime(timestamp: string) {
   return `${day} ${time} UTC`;
 }
 
-function formatWibTime(timestamp: string) {
-  const date = new Date(timestamp);
-  const day = date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: '2-digit',
+function formatDate(value?: string | null) {
+  if (!value) return '—';
+
+  return new Date(value).toLocaleDateString('en-CA', {
     timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+
+  const date = new Date(value);
+  const day = date.toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   });
   const time = date.toLocaleTimeString('en-US', {
     hour: '2-digit',
@@ -38,16 +53,20 @@ function formatWibTime(timestamp: string) {
   return `${day} ${time} WIB`;
 }
 
-function formatComparisonDateTime(timestamp: string) {
-  const date = new Date(timestamp);
-  const utcDate = date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+function formatPercent(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
 
-  return `${utcDate} ${formatUtcTime(timestamp)} / ${formatWibTime(timestamp)}`;
+  return `${value.toFixed(2)}%`;
+}
+
+function formatSpread(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+
+  return `${value.toFixed(2)} pp`;
+}
+
+function formatComparisonDateTime(timestamp: string) {
+  return formatDateTime(timestamp);
 }
 
 function formatUtcTime(timestamp: string) {
@@ -67,6 +86,29 @@ function chartDisplayIdx(idx: number) {
 function isRoundedZero(value: number, decimals: number) {
   return Math.abs(value) < 0.5 * 10 ** -decimals;
 }
+
+function readYield(row: BondMarketRow | undefined, maturity: string) {
+  const value = row?.yields[maturity];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readPreviousYield(row: BondMarketRow | undefined, maturity: string) {
+  const value = row?.previousYields?.[maturity];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function formatBondSource(source: string) {
+  return source.replace(/^TRADING_ECONOMICS_SCRAPE.*/i, 'Trading Economics');
+}
+
+function tradingEconomicsBondUrl(countryCode: string) {
+  if (countryCode === 'US') return 'https://tradingeconomics.com/united-states/government-bond-yield';
+  if (countryCode === 'ID') return 'https://tradingeconomics.com/indonesia/government-bond-yield';
+
+  return 'https://tradingeconomics.com/bonds';
+}
+
+const BOND_MATURITIES = ['1Y', '3Y', '5Y', '10Y'];
 
 type ChartMetric = {
   label: string;
@@ -222,18 +264,26 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const [selectedPairCode, setSelectedPairCode] = useState<string | null>(null);
 
   const rates = data.current?.rates || null;
-  const yesterday = data.yesterday ?? null;
+  const previousSnapshot = data.previous ?? data.yesterday ?? null;
+  const comparison = data.comparison ?? (
+    previousSnapshot?.updatedAt
+      ? { label: 'nearest 24h snapshot', timestamp: previousSnapshot.updatedAt }
+      : null
+  );
   const idx = rates ? computeIDX(rates, BASELINE_RATES_2000) : null;
-  const previousIdx = yesterday?.rates
-    ? computeIDX(yesterday.rates, BASELINE_RATES_2000)
+  const previousIdx = previousSnapshot?.rates
+    ? computeIDX(previousSnapshot.rates, BASELINE_RATES_2000)
     : null;
   const idxDiff = idx && previousIdx ? idx - previousIdx : 0;
   const idxPct = idx && previousIdx ? (idxDiff / previousIdx) * 100 : 0;
   const hasIdxDiff = Boolean(previousIdx) && !isRoundedZero(idxDiff, 3);
   const hasIdxPct = Boolean(previousIdx) && !isRoundedZero(idxPct, 3);
-  const comparisonDateTime = yesterday?.updatedAt
-    ? formatComparisonDateTime(yesterday.updatedAt)
+  const comparisonDateTime = comparison?.timestamp
+    ? formatComparisonDateTime(comparison.timestamp)
     : '';
+  const comparisonLabel = comparisonDateTime
+    ? `vs ${comparison?.label ?? 'comparison'}: ${comparisonDateTime}`
+    : 'Comparison unavailable';
 
   useEffect(() => {
     const updateClock = () => setClock(new Date().toUTCString().slice(17, 25) + ' UTC');
@@ -245,14 +295,14 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const basketChanges = useMemo(() => {
     if (!rates) return [];
     return PAIRS.map((pair) => {
-      const previous = yesterday?.rates[pair.code];
+      const previous = previousSnapshot?.rates[pair.code];
       const ratePct = previous ? ((rates[pair.code] - previous) / previous) * 100 : 0;
       return {
         code: pair.code,
         ratePct,
       };
     }).filter((item) => item.ratePct !== 0);
-  }, [rates, yesterday]);
+  }, [rates, previousSnapshot]);
 
   const strongest = basketChanges.filter((item) => item.ratePct < 0).sort((a, b) => a.ratePct - b.ratePct)[0];
   const weakest = basketChanges.filter((item) => item.ratePct > 0).sort((a, b) => b.ratePct - a.ratePct)[0];
@@ -280,7 +330,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     if (!rates) return null;
     const rate = rates[pair.code];
     if (!rate) return null;
-    const previous = yesterday?.rates[pair.code];
+    const previous = previousSnapshot?.rates[pair.code];
     const diffPct = previous ? ((rate - previous) / previous) * 100 : 0;
     const hasChange = Boolean(previous) && !isRoundedZero(diffPct, 3);
     const changeClass = !hasChange ? 'change-neutral' : diffPct > 0 ? 'idr-weaker' : 'idr-stronger';
@@ -296,7 +346,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
         </div>
         <div className="pair-rate">Rp {fmtIDR(rate)}</div>
         <div className="pair-sub">
-          <div className={`pair-change ${changeClass}`}>{hasChange ? `${diffPct > 0 ? '▲' : '▼'} ${Math.abs(diffPct).toFixed(3)}%` : '- 0%'}</div>
+          <div className={`pair-change ${changeClass}`}>{hasChange ? `${diffPct > 0 ? '▲' : '▼'} ${Math.abs(diffPct).toFixed(3)}%` : 'Comparison unavailable'}</div>
         </div>
       </>
     );
@@ -322,7 +372,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     if (!selectedPair || !rates) return null;
 
     const rate = rates[selectedPair.code];
-    const previous = yesterday?.rates[selectedPair.code];
+    const previous = previousSnapshot?.rates[selectedPair.code];
     const diff = previous ? rate - previous : 0;
     const diffPct = previous ? (diff / previous) * 100 : 0;
     const hasDiff = Boolean(previous) && !isRoundedZero(diff, 4);
@@ -373,9 +423,138 @@ export default function Dashboard({ data }: { data: DashboardData }) {
 
           <div className="pair-modal-meta">
             <div>UPDATED <span>{data.current ? formatUtcTime(data.current.updatedAt) : '-'}</span></div>
-            <div>{previous && yesterday?.updatedAt ? `VS PREVIOUS WEEKDAY CLOSE ${formatWibTime(yesterday.updatedAt)}` : 'VS PREVIOUS WEEKDAY CLOSE -'}</div>
+            <div>{previous && comparison?.timestamp ? comparisonLabel.toUpperCase() : 'COMPARISON UNAVAILABLE'}</div>
           </div>
         </section>
+      </div>
+    );
+  };
+
+  const renderBondChange = (current: number | null, previous: number | null, mode: 'yield' | 'spread' = 'yield') => {
+    if (current === null || previous === null) return null;
+
+    const delta = current - previous;
+    if (isRoundedZero(delta, 3)) return <span className="bond-change change-neutral">0.00 pp</span>;
+
+    const changeClass = mode === 'spread'
+      ? delta > 0 ? 'idr-stronger' : 'idr-weaker'
+      : delta > 0 ? 'idr-weaker' : 'idr-stronger';
+
+    return <span className={`bond-change ${changeClass}`}>{delta > 0 ? '+' : ''}{formatSpread(delta)}</span>;
+  };
+
+  const renderSpreadChange = (current: number | null, previous: number | null) => {
+    if (current === null || previous === null) return null;
+
+    const delta = current - previous;
+    const pct = previous !== 0 ? (delta / Math.abs(previous)) * 100 : null;
+    if (isRoundedZero(delta, 3)) {
+      return <span className="bond-change change-neutral">0.00 pp · 0.00%</span>;
+    }
+
+    const changeClass = delta > 0 ? 'idr-stronger' : 'idr-weaker';
+
+    return (
+      <span className={`bond-change ${changeClass}`}>
+        {delta > 0 ? '+' : ''}{formatSpread(delta)}
+        {pct !== null && ` · ${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`}
+      </span>
+    );
+  };
+
+  const renderBondMaturity = (row: BondMarketRow, maturity: string) => {
+    const current = readYield(row, maturity);
+    const previous = readPreviousYield(row, maturity);
+
+    return (
+      <div className="bond-maturity" key={`${row.countryCode}-${maturity}`}>
+        <span>{maturity}</span>
+        <strong>{formatPercent(current)}</strong>
+        {renderBondChange(current, previous)}
+      </div>
+    );
+  };
+
+  const renderBondMarket = () => {
+    const rows = data.bondMarket ?? [];
+    const usRow = rows.find((row) => row.countryCode === 'US');
+    const idRow = rows.find((row) => row.countryCode === 'ID');
+    const orderedRows = [usRow, idRow].filter((row): row is BondMarketRow => Boolean(row));
+    const spreads = BOND_MATURITIES.map((maturity) => {
+      const usYield = readYield(usRow, maturity);
+      const idYield = readYield(idRow, maturity);
+      const previousUsYield = readPreviousYield(usRow, maturity);
+      const previousIdYield = readPreviousYield(idRow, maturity);
+      const value = usYield !== null && idYield !== null ? idYield - usYield : null;
+      const previousValue = previousUsYield !== null && previousIdYield !== null
+        ? previousIdYield - previousUsYield
+        : null;
+
+      return { maturity, value, previousValue };
+    });
+    const hasSpread = spreads.some((spread) => spread.value !== null);
+
+    return (
+      <div className="currency-section bond-section">
+        <div className="section-label section-label-secondary">BOND MARKET</div>
+
+        {!orderedRows.length ? (
+          <div className="loading-state">Bond market data not available yet.</div>
+        ) : (
+          <>
+            <div className="bond-grid">
+              {orderedRows.map((row) => {
+                const tenYear = readYield(row, '10Y');
+                const previousTenYear = readPreviousYield(row, '10Y');
+
+                return (
+                  <article className="bond-card" key={row.countryCode}>
+                    <div className="bond-header">
+                      <div>
+                        <div className="bond-country">{row.countryName}</div>
+                        <div className="bond-code">{row.countryCode} sovereign yields</div>
+                      </div>
+                      <div className="bond-source-mark">TE</div>
+                    </div>
+                    <div className="bond-main">
+                      <span>10Y</span>
+                      <strong>{formatPercent(tenYear)}</strong>
+                      {renderBondChange(tenYear, previousTenYear)}
+                    </div>
+                    <div className="bond-maturities">
+                      {BOND_MATURITIES.map((maturity) => renderBondMaturity(row, maturity))}
+                    </div>
+                    <div className="bond-meta">
+                      <div>Observation: <span>{formatDate(row.observationDate)}</span></div>
+                      <div>Fetched: <span>{formatDateTime(row.fetchedAt)}</span></div>
+                      <div>
+                        Source:{' '}
+                        <a href={tradingEconomicsBondUrl(row.countryCode)} target="_blank" rel="noopener noreferrer">
+                          {formatBondSource(row.source)}
+                        </a>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+
+            {hasSpread && (
+              <div className="bond-spread-panel">
+                <div className="bond-spread-heading">ID-US Yield Spread</div>
+                <div className="bond-spread-grid">
+                  {spreads.map((spread) => (
+                    <div className="bond-spread-cell" key={spread.maturity}>
+                      <span>{spread.maturity}</span>
+                      <strong>{formatSpread(spread.value)}</strong>
+                      {renderSpreadChange(spread.value, spread.previousValue)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     );
   };
@@ -463,9 +642,9 @@ export default function Dashboard({ data }: { data: DashboardData }) {
               <div className={`idx-change ${hasIdxDiff ? idxDiff > 0 ? 'up' : 'down' : 'change-neutral'}`}>{hasIdxDiff ? `${idxDiff > 0 ? '+' : ''}${fmt(idxDiff, 3)}` : '- 0'}</div>
               <div className={`idx-change-pct ${hasIdxPct ? '' : 'change-neutral'}`}>{hasIdxPct ? `${idxPct > 0 ? '+' : ''}${idxPct.toFixed(3)}%` : '- 0%'}</div>
               <div className="idx-yesterday-label">
-                {previousIdx && yesterday?.updatedAt
-                  ? `vs PREVIOUS WEEKDAY CLOSE (${comparisonDateTime})`
-                  : 'vs PREVIOUS WEEKDAY CLOSE (-)'}
+                {previousIdx && comparison?.timestamp
+                  ? comparisonLabel
+                  : 'Comparison unavailable'}
               </div>
             </div>
           </div>
@@ -501,6 +680,8 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             )}
           </div>
         </div>
+
+        {renderBondMarket()}
 
         <div className="currency-section currency-section-assets">
           <div className="section-label section-label-secondary">GOLD & TOKEN PRICES vs IDR</div>
