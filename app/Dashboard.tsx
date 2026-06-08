@@ -37,20 +37,32 @@ function formatDateTime(value?: string | null) {
   if (!value) return '—';
 
   const date = new Date(value);
-  const day = date.toLocaleDateString('en-CA', {
+  const utcDay = date.toLocaleDateString('en-CA', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const utcTime = date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'UTC',
+  });
+  const wibDay = date.toLocaleDateString('en-CA', {
     timeZone: 'Asia/Jakarta',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
-  const time = date.toLocaleTimeString('en-US', {
+  const wibTime = date.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
     timeZone: 'Asia/Jakarta',
   });
 
-  return `${day} ${time} WIB`;
+  return `${utcDay} ${utcTime} UTC / ${wibDay} ${wibTime} WIB`;
 }
 
 function formatPercent(value?: number | null) {
@@ -71,12 +83,20 @@ function formatComparisonDateTime(timestamp: string) {
 
 function formatUtcTime(timestamp: string) {
   const date = new Date(timestamp);
-  return date.toLocaleTimeString('en-US', {
+
+  return `${date.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hour12: false,
     timeZone: 'UTC',
-  }) + ' UTC';
+  })} UTC / ${date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Jakarta',
+  })} WIB`;
 }
 
 function chartDisplayIdx(idx: number) {
@@ -260,7 +280,7 @@ function IdxLineChart({
 }
 
 export default function Dashboard({ data }: { data: DashboardData }) {
-  const [clock, setClock] = useState('--:--:-- UTC');
+  const [clock, setClock] = useState('--:--:-- UTC / --:--:-- WIB');
   const [selectedPairCode, setSelectedPairCode] = useState<string | null>(null);
 
   const rates = data.current?.rates || null;
@@ -286,7 +306,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     : 'Comparison unavailable';
 
   useEffect(() => {
-    const updateClock = () => setClock(new Date().toUTCString().slice(17, 25) + ' UTC');
+    const updateClock = () => setClock(formatUtcTime(new Date().toISOString()));
     updateClock();
     const timer = window.setInterval(updateClock, 1000);
     return () => window.clearInterval(timer);
@@ -653,7 +673,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             <div className="idx-meta-item">BASKET <span>{PAIRS.length}</span></div>
             <div className="idx-meta-item">IDR STRONGER VS <span className={strongest ? 'idr-stronger' : ''}>{strongest ? `${strongest.code} (${signedPct(strongest.ratePct)})` : ''}</span></div>
             <div className="idx-meta-item">IDR WEAKER VS <span className={weakest ? 'idr-weaker' : ''}>{weakest ? `${weakest.code} (${signedPct(weakest.ratePct)})` : ''}</span></div>
-            <div className="idx-meta-item">UPDATED <span>{data.current ? new Date(data.current.updatedAt).toISOString().slice(11, 19) + ' UTC' : '-'}</span></div>
+            <div className="idx-meta-item">UPDATED <span>{data.current ? formatUtcTime(data.current.updatedAt) : '-'}</span></div>
           </div>
         </div>
 
