@@ -10,5 +10,5 @@ export default async function Home() {
     getBondMarketData(),
   ]);
 
-  return <Dashboard data={{ ...data, bondMarket }} />;
+  return <Dashboard data={{ ...data, bondMarket, bondMarketCheckedAt: new Date().toISOString() }} />;
 }

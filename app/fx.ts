@@ -24,6 +24,7 @@ export type DashboardData = {
     timestamp: string;
   } | null;
   bondMarket?: import('./bonds').BondMarketRow[];
+  bondMarketCheckedAt?: string;
   chartPoints?: IdxChartPoint[];
   error?: string;
 };

@@ -117,6 +117,17 @@ function readPreviousYield(row: BondMarketRow | undefined, maturity: string) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+const BOND_MAX_AGE_MS = 4 * 24 * 60 * 60 * 1000;
+
+function isBondRowStale(row: BondMarketRow, checkedAt?: string) {
+  const checkedTime = Date.parse(checkedAt ?? '');
+  // Date-only observations represent a market day, not an intraday timestamp.
+  const observedDayEnd = Date.parse(`${row.observationDate.slice(0, 10)}T23:59:59Z`);
+  if (!Number.isFinite(checkedTime) || !Number.isFinite(observedDayEnd)) return true;
+  // Allow weekends and short market closures; flag data older than four days.
+  return checkedTime - observedDayEnd > BOND_MAX_AGE_MS;
+}
+
 function formatBondSource(source: string) {
   return source.replace(/^TRADING_ECONOMICS_SCRAPE.*/i, 'Trading Economics');
 }
@@ -496,6 +507,18 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     const usRow = rows.find((row) => row.countryCode === 'US');
     const idRow = rows.find((row) => row.countryCode === 'ID');
     const orderedRows = [usRow, idRow].filter((row): row is BondMarketRow => Boolean(row));
+    const staleRows = orderedRows.filter((row) => isBondRowStale(row, data.bondMarketCheckedAt));
+    const missingCountries = ['US', 'ID'].filter((code) => !rows.some((row) => row.countryCode === code));
+    const warnings: string[] = [];
+    if (staleRows.length) {
+      warnings.push(`Stale observations: ${staleRows.map((row) => `${row.countryCode} (${row.observationDate})`).join(', ')}`);
+    }
+    if (missingCountries.length) {
+      warnings.push(`Missing country data: ${missingCountries.join(', ')}`);
+    }
+    if (usRow && idRow && usRow.observationDate !== idRow.observationDate) {
+      warnings.push('US and ID observations are from different dates');
+    }
     const spreads = BOND_MATURITIES.map((maturity) => {
       const usYield = readYield(usRow, maturity);
       const idYield = readYield(idRow, maturity);
@@ -514,6 +537,12 @@ export default function Dashboard({ data }: { data: DashboardData }) {
       <div className="currency-section bond-section">
         <div className="section-label section-label-secondary">BOND MARKET</div>
 
+        {warnings.length > 0 && (
+          <div className="error-msg" role="status">
+            Bond tracker warning: {warnings.join('. ')}. These are stored observations, not live quotes. Check the Supabase bond collector.
+          </div>
+        )}
+
         {!orderedRows.length ? (
           <div className="loading-state">Bond market data not available yet.</div>
         ) : (
@@ -530,7 +559,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                         <div className="bond-country">{row.countryName}</div>
                         <div className="bond-code">{row.countryCode} sovereign yields</div>
                       </div>
-                      <div className="bond-source-mark">TE</div>
+                      <div className="bond-source-mark">{isBondRowStale(row, data.bondMarketCheckedAt) ? "STALE" : "TE"}</div>
                     </div>
                     <div className="bond-main">
                       <span>10Y</span>
@@ -557,7 +586,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
 
             {hasSpread && (
               <div className="bond-spread-panel">
-                <div className="bond-spread-heading">ID-US Yield Spread</div>
+                <div className="bond-spread-heading">ID-US Yield Spread{warnings.length > 0 ? " (check snapshot dates)" : ""}</div>
                 <div className="bond-spread-grid">
                   {spreads.map((spread) => (
                     <div className="bond-spread-cell" key={spread.maturity}>
