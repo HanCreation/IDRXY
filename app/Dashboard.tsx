@@ -127,6 +127,7 @@ function isBondRowStale(row: BondMarketRow, checkedAt?: string) {
   // Allow weekends and short market closures; flag data older than four days.
   return checkedTime - observedDayEnd > BOND_MAX_AGE_MS;
 }
+
 function formatBondSource(source: string) {
   return source.replace(/^TRADING_ECONOMICS_SCRAPE.*/i, 'Trading Economics');
 }
