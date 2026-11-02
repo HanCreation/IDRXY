@@ -73,6 +73,7 @@ async function readLatestCountryBond(supabase: ReturnType<typeof getSupabaseClie
   const previous = (previousRows?.[0] ?? null) as BondSnapshotRow | null;
   return normalizeRow(latest, previous);
 }
+
 async function readBondMarketData(): Promise<BondMarketRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
