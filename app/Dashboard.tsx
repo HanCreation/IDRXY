@@ -118,10 +118,15 @@ function readPreviousYield(row: BondMarketRow | undefined, maturity: string) {
 }
 
 function formatBondSource(source: string) {
+  if (source === 'PHEI_IGSYC') return 'PHEI · daily government yield curve';
+  if (source === 'US_TREASURY_PAR_YIELD') return 'US Treasury · daily par yield curve';
   return source.replace(/^TRADING_ECONOMICS_SCRAPE.*/i, 'Trading Economics');
 }
 
-function tradingEconomicsBondUrl(countryCode: string) {
+function bondSourceUrl(row: BondMarketRow) {
+  if (row.source === 'PHEI_IGSYC') return 'https://www.phei.co.id/en-us/Data/Fair-Prices-and-Yield';
+  if (row.source === 'US_TREASURY_PAR_YIELD') return 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve';
+  const countryCode = row.countryCode;
   if (countryCode === 'US') return 'https://tradingeconomics.com/united-states/government-bond-yield';
   if (countryCode === 'ID') return 'https://tradingeconomics.com/indonesia/government-bond-yield';
 
@@ -496,13 +501,15 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     const usRow = rows.find((row) => row.countryCode === 'US');
     const idRow = rows.find((row) => row.countryCode === 'ID');
     const orderedRows = [usRow, idRow].filter((row): row is BondMarketRow => Boolean(row));
+    const sameObservationDate = usRow?.observationDate === idRow?.observationDate;
+    const sameComparisonDate = usRow?.previousObservationDate === idRow?.previousObservationDate;
     const spreads = BOND_MATURITIES.map((maturity) => {
       const usYield = readYield(usRow, maturity);
       const idYield = readYield(idRow, maturity);
       const previousUsYield = readPreviousYield(usRow, maturity);
       const previousIdYield = readPreviousYield(idRow, maturity);
-      const value = usYield !== null && idYield !== null ? idYield - usYield : null;
-      const previousValue = previousUsYield !== null && previousIdYield !== null
+      const value = sameObservationDate && usYield !== null && idYield !== null ? idYield - usYield : null;
+      const previousValue = sameComparisonDate && previousUsYield !== null && previousIdYield !== null
         ? previousIdYield - previousUsYield
         : null;
 
@@ -530,7 +537,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                         <div className="bond-country">{row.countryName}</div>
                         <div className="bond-code">{row.countryCode} sovereign yields</div>
                       </div>
-                      <div className="bond-source-mark">TE</div>
+                      <div className="bond-source-mark">{row.source === 'PHEI_IGSYC' ? 'PHEI' : row.source === 'US_TREASURY_PAR_YIELD' ? 'UST' : 'TE'}</div>
                     </div>
                     <div className="bond-main">
                       <span>10Y</span>
@@ -543,9 +550,20 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                     <div className="bond-meta">
                       <div>Observation: <span>{formatDate(row.observationDate)}</span></div>
                       <div>Fetched: <span>{formatDateTime(row.fetchedAt)}</span></div>
+                      {Date.now() - new Date(row.fetchedAt).getTime() > 2.5 * 60 * 60 * 1000 && (
+                        <div role="status">Collection delayed · showing last saved observation</div>
+                      )}
+                      {Date.now() - new Date(`${row.observationDate}T00:00:00Z`).getTime() > 4 * 24 * 60 * 60 * 1000 && (
+                        <div role="status">Market observation is more than four days old</div>
+                      )}
+                      {row.previousObservationDate ? (
+                        <div>Change vs: <span>{formatDate(row.previousObservationDate)}</span></div>
+                      ) : (
+                        <div>Change unavailable · no earlier observation from this provider</div>
+                      )}
                       <div>
                         Source:{' '}
-                        <a href={tradingEconomicsBondUrl(row.countryCode)} target="_blank" rel="noopener noreferrer">
+                        <a href={bondSourceUrl(row)} target="_blank" rel="noopener noreferrer">
                           {formatBondSource(row.source)}
                         </a>
                       </div>
@@ -554,6 +572,10 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 );
               })}
             </div>
+
+            {usRow && idRow && !sameObservationDate && (
+              <div className="bond-meta" role="status">Yield spread unavailable · country observation dates differ.</div>
+            )}
 
             {hasSpread && (
               <div className="bond-spread-panel">

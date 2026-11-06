@@ -24,6 +24,8 @@ export type BondMarketRow = {
 };
 
 function normalizeRow(row: BondSnapshotRow, previous?: BondSnapshotRow | null): BondMarketRow {
+  const comparable = previous?.source === row.source && previous.observation_date < row.observation_date
+    ? previous : null;
   return {
     countryCode: row.country_code,
     countryName: row.country_name,
@@ -31,8 +33,8 @@ function normalizeRow(row: BondSnapshotRow, previous?: BondSnapshotRow | null): 
     fetchedAt: row.fetched_at,
     source: row.source,
     yields: row.yields ?? {},
-    previousYields: previous?.yields ?? null,
-    previousObservationDate: previous?.observation_date ?? null,
+    previousYields: comparable?.yields ?? null,
+    previousObservationDate: comparable?.observation_date ?? null,
   };
 }
 
@@ -55,7 +57,20 @@ async function readLatestCountryBond(supabase: ReturnType<typeof getSupabaseClie
   const rows = (data ?? []) as BondSnapshotRow[];
   if (!rows.length) return null;
 
-  return normalizeRow(rows[0], rows[1] ?? null);
+  let previous: BondSnapshotRow | null = rows[1] ?? null;
+  if (previous && previous.source !== rows[0].source) {
+    const { data: comparableRows, error: previousError } = await supabase
+      .from('bond_yield_snapshots')
+      .select('country_code, country_name, observation_date, source, yields, fetched_at')
+      .eq('country_code', countryCode)
+      .eq('source', rows[0].source)
+      .lt('observation_date', rows[0].observation_date)
+      .order('observation_date', { ascending: false })
+      .limit(1);
+    if (previousError) console.error(`Failed to read ${countryCode} bond comparison:`, previousError.message);
+    previous = (comparableRows?.[0] as BondSnapshotRow | undefined) ?? null;
+  }
+  return normalizeRow(rows[0], previous);
 }
 
 async function readBondMarketData(): Promise<BondMarketRow[]> {
