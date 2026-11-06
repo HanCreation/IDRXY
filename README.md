@@ -19,6 +19,8 @@ The homepage route is `app/page.tsx`, so `/` should resolve after a successful N
 
 `supabase/functions/fetch/index.ts` is the source for the existing Supabase `fetch` Edge Function, invoked by the database's five-minute cron. Vercel reads the saved snapshots; it does not collect the bond curves. Deploy the function separately from the Next.js site, preserving its existing CRON_SECRET bearer authentication and project secrets.
 
+The targeted migration in `supabase/migrations/20261106000000_bond_fetch_timeout.sql` raises the cron HTTP timeout from its 5-second default to 150 seconds, allowing bounded feed retries to finish without changing the schedule or authentication.
+
 Bond curves are checked hourly (or with an authenticated `force_bonds: true` request):
 
 - US: official Daily Treasury Par Yield Curve XML, 1Y/3Y/5Y/10Y.
